@@ -1,0 +1,5 @@
+// a push program
+// dumpStacks 
+11 22 33 iAdd iAdd iPrint
+// iPrint iPrint iPrint 4 5 6
+// 10 iEmit dumpStacks

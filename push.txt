@@ -1,0 +1,8 @@
+// a push program
+// dumpStacks 
+{ 111 222 333 iAdd iAdd iPrint } sub1
+{ 4 5 6 iPrint iPrint iPrint } sub2
+// 13 10 iEmit iEmit dumpStacks
+
+sub1 14 15 16 iMul iAdd iPrint sub2
+// dumpStacks
