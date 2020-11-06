@@ -5,7 +5,7 @@
 
 typedef unsigned char byte;
 
-int debug = 1;
+int debug = 0;
 
 struct QUOTE_T {
     char name[16];
@@ -77,7 +77,6 @@ QUOTE_PTR addQuote(int initialSize) {
     strcpy(q->name, "-none-");
     q->used = 0;
     q->opcodes = (byte *)malloc(sizeof(byte) * q->sz);
-    qPushAll(q);
     return q;
 }
 
@@ -86,9 +85,10 @@ void dumpQuote(QUOTE_PTR q) {
     for (int i = 0; i < q->used; i++) printf("%d ", q->opcodes[i]);
 }
 
-void dumpQuotes() {
+int dumpQuotes(QUOTE_PTR q, int pc) {
     printf("\nquotes: (%d)", qSPAll);
     for (int i = 0; i < qSPAll; i++) dumpQuote(allQuotes[i]);
+    return pc;
 }
 
 void addOpToQuote(QUOTE_PTR q, byte op) {
@@ -135,6 +135,27 @@ int sLT(QUOTE_PTR q, int pc)  { long x = iPop(), y = iPop(); bPush(y<x); return 
 int sGT(QUOTE_PTR q, int pc)  { long x = iPop(), y = iPop(); bPush(y>x); return pc; }
 int sParse(QUOTE_PTR q, int pc)  { char *x = sPop(); parseLine(x, 0); free(x); return pc; }
 
+int exCall(QUOTE_PTR q, int pc)  {
+    long x = q->opcodes[pc++];
+    x = x + (q->opcodes[pc++] << 8);
+    x = x + (q->opcodes[pc++] << 16);
+    x = x + (q->opcodes[pc++] << 24);
+    QUOTE_PTR q1 = (QUOTE_PTR)x;
+    exec(q1);
+    return pc;
+}
+
+int exIf(QUOTE_PTR q, int pc)  {
+    char x = bPop();
+    // printf("-exIf:x=%d,qSP=%d-", x, qSP);
+    if (qSPAll < 2) return pc;
+    QUOTE_PTR q2 = allQuotes[qSPAll-1]; 
+    QUOTE_PTR q1 = allQuotes[qSPAll-2]; 
+    if (x) exec(q1); else exec(q2);
+    return pc;
+}
+
+
 int (*ops[])(QUOTE_PTR, int) = {
 /*         0        1        2        3        4        5        6        7        8        9 */
 /*   0 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
@@ -149,7 +170,7 @@ int (*ops[])(QUOTE_PTR, int) = {
 /*  90 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 100 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 110 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
-/* 120 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
+/* 120 */ exIf,    exCall,  noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 130 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 140 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 150 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
@@ -162,7 +183,7 @@ int (*ops[])(QUOTE_PTR, int) = {
 /* 220 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 230 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
 /* 240 */ noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    noop,    
-/* 250 */ noop,    noop,    noop,    noop,    noop,    dumpStacks
+/* 250 */ noop,    noop,    noop,    noop, dumpQuotes, dumpStacks
 };
 
 void exec(QUOTE_PTR q) {
@@ -192,6 +213,15 @@ byte isNumber(char *word) {
     return 1;
 }
 
+QUOTE_PTR findNamedQuote(char *name) {
+    for (int i = 0; i < qSPAll; i++) {
+        QUOTE_PTR q = allQuotes[i];
+        if (q->name && (strcmp(q->name, name) == 0))
+            return q;
+    }
+    return 0;
+}
+
 QUOTE_PTR curr_q = NULL;
 int parseWord(char *word, int state) {
     if (state == 256) return state;
@@ -203,22 +233,46 @@ int parseWord(char *word, int state) {
         addOpToQuote(curr_q, (x>> 0)&0xff);
         addOpToQuote(curr_q, (x>> 8)&0xff);
         addOpToQuote(curr_q, (x>>16)&0xff);
-        addOpToQuote(curr_q, (x>>14)&0xff);
+        addOpToQuote(curr_q, (x>>24)&0xff);
         return state; }
     if (strcmp(word, "{") == 0) {
         qPush(curr_q);
         curr_q = addQuote(0);
+        return state;
     }
     if (strcmp(word, "}") == 0) {
         if (debug > 1) dumpQuote(curr_q);
+        qPushAll(curr_q);
         curr_q = qPop();
+        return state;
     }
     if (strcmp(word, "iAdd") == 0) { addOpToQuote(curr_q, 20); return state; }
     if (strcmp(word, "iMul") == 0) { addOpToQuote(curr_q, 22); return state; }
+    if (strcmp(word, "iEq") == 0) { addOpToQuote(curr_q, 25); return state; }
     if (strcmp(word, "iPrint") == 0) { addOpToQuote(curr_q, 28); return state; }
     if (strcmp(word, "iEmit") == 0) { addOpToQuote(curr_q, 29); return state; }
     if (strcmp(word, "dumpStacks") == 0) { addOpToQuote(curr_q, 255); return state; }
+    if (strcmp(word, "dumpQuotes") == 0) { addOpToQuote(curr_q, 254); return state; }
 
+    if (strcmp(word, "if") == 0) { addOpToQuote(curr_q, 120); return state; }
+    
+    QUOTE_PTR q = findNamedQuote(word);
+    if (q) {
+        long x = (long)q;
+        // printf("--call[%s]--", q->name);
+        addOpToQuote(curr_q, 121);
+        addOpToQuote(curr_q, (x>> 0)&0xff);
+        addOpToQuote(curr_q, (x>> 8)&0xff);
+        addOpToQuote(curr_q, (x>>16)&0xff);
+        addOpToQuote(curr_q, (x>>24)&0xff);
+        return state;
+    }
+    
+    q = qPopALL();
+    if (q) {
+        strcpy(q->name, word);
+        qPushAll(q);
+    }
     return state;
 }
 
@@ -262,6 +316,7 @@ int dumpStacks(QUOTE_PTR q, int pc) {
     printf("\nexec: (%d) ", eSP);
     for (int i = 0; i < eSP; i++) printf("%d ", eStk[i]);
 
+    printf("\n");;
     return pc;
 }
 
@@ -295,6 +350,8 @@ int main (int argc, char **argv)
     }
 
     curr_q = addQuote(0);
+    qPushAll(curr_q);
+
     // the push program file ...
     FILE *fp = fopen(fn, "rt");
 	if (fp) {
@@ -305,7 +362,7 @@ int main (int argc, char **argv)
     if (debug > 0) dumpStacks(0, 0);
     exec(curr_q);
     if (debug > 0) dumpStacks(0, 0);
-    if (debug > 0) dumpQuotes();
+    if (debug > 0) dumpQuotes(0, 0);
 
     return 0;
 }
