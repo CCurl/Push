@@ -1,5 +1,4 @@
 // a push program
-// dumpStacks 
 { 111 222 333 iAdd iAdd iPrint } <- sub1
 sub1
 { 4 5 6 iPrint iPrint iPrint } <- sub2
@@ -9,4 +8,4 @@ sub1
 14 15 16 iMul iAdd iPrint
 33 33 iEq { 4444 iPrint } { } if
 6666 7777 66666 77777
-dumpStacks dumpQuotes
+dumpStacks // dumpQuotes
